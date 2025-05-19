@@ -148,12 +148,13 @@ class MRVRead:
         if 'molecule' in data and isinstance(data['molecule'], dict):
             datamol = data['molecule']
             mol = self.prepare_molecule(datamol, meta)
-            print(mol)
             if 'Rgroup' not in data:
                 return mol
             else:
                 substituents = []
                 data = data['Rgroup']
+                if isinstance(data, dict):  # if single molecule, list will be omitted
+                    data = [data]
                 for rgroup in data:
                     r_idx = int(rgroup['@rgroupID'])
                     if isinstance(rgroup['molecule'], dict):  # if single molecule, list will be omitted
@@ -163,6 +164,13 @@ class MRVRead:
                     for moldata in molecules:
                         sub = self.prepare_molecule(moldata, rgroup=r_idx)
                         substituents.append(sub)
+                # check which molecule is Markush
+                mols = mol.split()
+                sort_mols = sorted(mols, key= lambda x : {atom.atomic_symbol for _, atom in mol.atoms()}.intersection({'X', 'R'}))
+                # we found Markush, so others are not
+                # todo add explicit check for only one Markush
+                mol = sort_mols[0]
+                substituents.extend(sort_mols[1:])
                 return MarkushContainer.from_molecule(mol, substituents=substituents)
 
 
@@ -296,12 +304,17 @@ def parse_molecule(data, rgroup: int = None):
             atom_map[atom['@id']] = n
             element = atom['@elementType']
             isotope = int(atom['@isotope']) if '@isotope' in atom else None
-            if element == "R" and atom['@rgroupRef']:
+            # check for R group in structure
+            if element == 'R' and atom['@rgroupRef']:
                 isotope = int(atom['@rgroupRef'])
-            elif element == "*":
-                element = "R"
+            elif element == '*':
+                element = 'R'
                 if rgroup is not None:
                     isotope = rgroup
+            # check for X atom in structure
+            if element == 'C' and atom.get('@mrvPseudo') == 'X':
+                element = 'X'
+                # additional data will be checked in sgroup parser
             atoms.append({'element': element,
                           'isotope': isotope,
                           'charge': int(atom.get('@formalCharge', 0)),
@@ -379,13 +392,32 @@ def parse_sgroup(data, molecule):
         data = data['molecule']
         if isinstance(data, dict):
             data = (data,)
-
         sgroups = {}
         atom_map = molecule['mapping']
         atom_map = {k: atom_map[v] for k, v in molecule['atom_map'].items()}
         for x in data:
             if '@atomRefs' in x:
                 atoms = [atom_map[x] for x in x['@atomRefs'].split()]
+                # take indexes for X atoms through DataSgroup, because Marvin do not support indexing X groups
+                if x.get('@role') == 'DataSgroup':
+                    if len(atoms) == 1:
+                            if molecule['atoms'][atoms[0] - 1]['element'] == 'X':
+                                if x.get('@fieldName') == 'X' and 'X' in x.get('@fieldData'):
+                                    molecule['atoms'][atom_map[x.get('@atomRefs')] - 1]['isotope'] = \
+                                        int(x['@fieldData'].split('X')[1])
+                            else:
+                                if x.get('@fieldName') == 'X' and 'X' in x.get('@fieldData'):
+                                    molecule['atoms'].append({'element': 'X',
+                                                  'isotope': int(x['@fieldData'].split('X')[1]),
+                                                  'charge':  0,
+                                                  'is_radical': False,
+                                                  'parsed_mapping': 0})
+                                    molecule['mapping'].append(len(molecule['atoms']))
+                                    molecule['bonds'].append((len(molecule['atoms'])-1, atom_map[x.get('@atomRefs')]-1, 1))
+
+                if x.get('@role') == 'SruSgroup':
+                    # todo add variable chains
+                    pass
             elif 'AttachmentPointArray' in x:
                 atoms = x['AttachmentPointArray']['attachmentPoint']
                 if isinstance(atoms, dict):
@@ -397,114 +429,6 @@ def parse_sgroup(data, molecule):
             tmp['atoms'] = atoms
             sgroups[x['@id']] = tmp
         molecule['meta'] = sgroups
-
-def parse_rgroup(data, molecule):
-    """
-    'Rgroup': [{'@rgroupID': '1',
-                'molecule': [{'@molID': 'm2',
-                              'atomArray': {'atom': [{'@id': 'a1',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-3.562593333332587',
-                                                      '@y2': '-1.1132399907607469'},
-                                                     {'@id': 'a2',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-4.896139989330879',
-                                                      '@y2': '-0.3432399969207469'},
-                                                     {'@id': 'a3',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-4.896139989330879',
-                                                      '@y2': '1.19657332409408'},
-                                                     {'@id': 'a4',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-2.2288600106691208',
-                                                      '@y2': '1.19657332409408'},
-                                                     {'@id': 'a5',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-2.2288600106691208',
-                                                      '@y2': '-0.3432399969207469'},
-                                                     {'@id': 'a6',
-                                                      '@elementType': '*',
-                                                      '@x2': '-6.229835668979073',
-                                                      '@y2': '-1.1132113172228375',
-                                                      '@attachmentOrder': '1'}]},
-                              'bondArray': {'bond': [{'@id': 'b1',
-                                                      '@atomRefs2': 'a1 a2',
-                                                      '@order': '1'},
-                                                     {'@id': 'b2', '@atomRefs2': 'a1 a5', '@order': '1'},
-                                                     {'@id': 'b3', '@atomRefs2': 'a2 a3', '@order': '1'},
-                                                     {'@id': 'b4', '@atomRefs2': 'a3 a4', '@order': '1'},
-                                                     {'@id': 'b5', '@atomRefs2': 'a4 a5', '@order': '1'},
-                                                     {'@id': 'b6', '@atomRefs2': 'a2 a6', '@order': '1'}]}},
-                             {'@molID': 'm3',
-                              'atomArray': {'atom': [{'@id': 'a1',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-4.14592666666592',
-                                                      '@y2': '4.42842667590592'},
-                                                     {'@id': 'a2',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-5.479473322664212',
-                                                      '@y2': '5.19842666974592'},
-                                                     {'@id': 'a3',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-5.479473322664212',
-                                                      '@y2': '6.738239990760746'},
-                                                     {'@id': 'a4',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-2.812193344002454',
-                                                      '@y2': '6.738239990760746'},
-                                                     {'@id': 'a5',
-                                                      '@elementType': 'C',
-                                                      '@x2': '-2.812193344002454',
-                                                      '@y2': '5.19842666974592'},
-                                                     {'@id': 'a6',
-                                                      '@elementType': '*',
-                                                      '@x2': '-6.813169002312406',
-                                                      '@y2': '4.428455349443829',
-                                                      '@attachmentOrder': '1'}]},
-                              'bondArray': {'bond': [{'@id': 'b1',
-                                                      '@atomRefs2': 'a1 a2',
-                                                      '@order': '1'},
-                                                     {'@id': 'b2', '@atomRefs2': 'a1 a5', '@order': '1'},
-                                                     {'@id': 'b3', '@atomRefs2': 'a2 a3', '@order': '1'},
-                                                     {'@id': 'b4', '@atomRefs2': 'a3 a4', '@order': '1'},
-                                                     {'@id': 'b5', '@atomRefs2': 'a4 a5', '@order': '1'},
-                                                     {'@id': 'b6', '@atomRefs2': 'a2 a6', '@order': '1'}]}}]},
-               {'@rgroupID': '2',
-                'molecule': {'@molID': 'm4',
-                             'atomArray': {'atom': [{'@id': 'a1',
-                                                     '@elementType': 'N',
-                                                     '@x2': '-11.020833333333334',
-                                                     '@y2': '-5.988333333333333',
-                                                     '@lonePair': '1'},
-                                                    {'@id': 'a2',
-                                                     '@elementType': 'C',
-                                                     '@x2': '-12.354473333333333',
-                                                     '@y2': '-5.218333333333334'},
-                                                    {'@id': 'a3',
-                                                     '@elementType': 'C',
-                                                     '@x2': '-12.354473333333333',
-                                                     '@y2': '-3.6783333333333332'},
-                                                    {'@id': 'a4',
-                                                     '@elementType': 'C',
-                                                     '@x2': '-9.687193333333333',
-                                                     '@y2': '-3.6783333333333332'},
-                                                    {'@id': 'a5',
-                                                     '@elementType': 'C',
-                                                     '@x2': '-9.687193333333333',
-                                                     '@y2': '-5.218333333333334'},
-                                                    {'@id': 'a6',
-                                                     '@elementType': '*',
-                                                     '@x2': '-13.443417776360617',
-                                                     '@y2': '-2.58938889030605',
-                                                     '@attachmentOrder': '1'}]},
-                             'bondArray': {'bond': [{'@id': 'b1', '@atomRefs2': 'a1 a2', '@order': '1'},
-                                                    {'@id': 'b2', '@atomRefs2': 'a1 a5', '@order': '1'},
-                                                    {'@id': 'b3', '@atomRefs2': 'a2 a3', '@order': '2'},
-                                                    {'@id': 'b4', '@atomRefs2': 'a3 a4', '@order': '1'},
-                                                    {'@id': 'b5', '@atomRefs2': 'a4 a5', '@order': '2'},
-                                                    {'@id': 'b6', '@atomRefs2': 'a3 a6', '@order': '1'}]}}}]
-    """
-
 
 
 class MRVWrite:
