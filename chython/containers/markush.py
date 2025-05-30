@@ -59,8 +59,8 @@ class MarkushContainer:
                 if other_num := substituent_r_groups.get(group):
                     self_neigbour = [x for x in new.int_adjacency[self_num]][0]
                     other_neigbour = [x for x in new.int_adjacency[other_num]][0]
-                    new.delete_atom(self_num)
-                    new.delete_atom(other_num)
+                    new.delete_atom(self_num, _skip_calculation=True)
+                    new.delete_atom(other_num, _skip_calculation=True)
                     new.add_bond(self_neigbour, other_neigbour, 1)
                     return new
         return first
