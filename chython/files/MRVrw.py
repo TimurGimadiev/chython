@@ -148,25 +148,28 @@ class MRVRead:
         if 'molecule' in data and isinstance(data['molecule'], dict):
             datamol = data['molecule']
             mol = self.prepare_molecule(datamol, meta)
-            if 'Rgroup' not in data:
+            substituents = []
+            if not data.get('Rgroup') and not any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
                 return mol
             else:
-                substituents = []
-                data = data['Rgroup']
-                if isinstance(data, dict):  # if single molecule, list will be omitted
-                    data = [data]
-                for rgroup in data:
-                    r_idx = int(rgroup['@rgroupID'])
-                    if isinstance(rgroup['molecule'], dict):  # if single molecule, list will be omitted
-                        molecules = [rgroup['molecule']]
-                    else:
-                        molecules = rgroup['molecule']
-                    for moldata in molecules:
-                        sub = self.prepare_molecule(moldata, rgroup=r_idx)
-                        substituents.append(sub)
-                # check which molecule is Markush
+                if datagroup := data.get('Rgroup'):
+                    substituents = []
+                    if isinstance(datagroup, dict):  # if single molecule, list will be omitted
+                        datagroup = [datagroup]
+                    for rgroup in datagroup:
+                        r_idx = int(rgroup['@rgroupID'])
+                        if isinstance(rgroup['molecule'], dict):  # if single molecule, list will be omitted
+                            molecules = [rgroup['molecule']]
+                        else:
+                            molecules = rgroup['molecule']
+                        for moldata in molecules:
+                            sub = self.prepare_molecule(moldata, rgroup=r_idx)
+                            substituents.append(sub)
+                #if any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
+
+                    # check which molecule is Markush
                 mols = mol.split()
-                sort_mols = sorted(mols, key= lambda x : {atom.atomic_symbol for _, atom in mol.atoms()}.intersection({'X', 'R'}))
+                sort_mols = sorted(mols, key=lambda x: {atom.atomic_symbol for _, atom in mol.atoms()}.intersection({'X', 'R'}))
                 # we found Markush, so others are not
                 # todo add explicit check for only one Markush
                 mol = sort_mols[0]
@@ -400,6 +403,7 @@ def parse_sgroup(data, molecule):
                 atoms = [atom_map[x] for x in x['@atomRefs'].split()]
                 # take indexes for X atoms through DataSgroup, because Marvin do not support indexing X groups
                 if x.get('@role') == 'DataSgroup':
+                    pass
                     if len(atoms) == 1:
                             if molecule['atoms'][atoms[0] - 1]['element'] == 'X':
                                 if x.get('@fieldName') == 'X' and 'X' in x.get('@fieldData'):
@@ -415,9 +419,72 @@ def parse_sgroup(data, molecule):
                                     molecule['mapping'].append(len(molecule['atoms']))
                                     molecule['bonds'].append((len(molecule['atoms'])-1, atom_map[x.get('@atomRefs')]-1, 1))
 
-                if x.get('@role') == 'SruSgroup':
+                elif x.get('@role') == 'SruSgroup':
+                    # extract group
+                    seqs = []
+                    for seq in x.get('@title').split(","):
+                        if "-" in seq:
+                            down, up = seq.split("-")
+                            seqs.extend([q for q in range(int(down), int(up)+1)])
+                        else:
+                            seqs.append(int(seq))
+                    for seq in seqs:
+                        first_connection = None
+                        second_connection = None
+                        molecule_new = {}
+                        molecule_new['atoms'] = []
+                        molecule_new['bonds'] = []
+                        molecule_new['mapping'] = []
+                        connection_map = defaultdict(list)
+                        for i in range(seq):
+                            new_atoms_map = {}
+                            new_atoms = []
+                            neighbours = defaultdict(list)
+                            for atom in atoms:
+                                #print(atoms)
+                                # print(x.get('@title'))
+                                # print(molecule['atoms'][atom-1])
+                                molecule_new['atoms'].append(molecule['atoms'][atom-1].copy())
+                                new_atoms.append(molecule['atoms'][atom-1].copy())
+                                new_atoms_map.update({atom: len(molecule['atoms'])+len(molecule_new['atoms'])})
+                                molecule_new['mapping'].append(new_atoms_map[atom])
+                                # new_mapping.append(new_atoms_map[atom])
+                            for bond in molecule['bonds']:
+                                atom1, atom2, order = bond
+                                #print(f"{molecule['atoms'][atom1-1]['element']}({atom1}), {molecule['atoms'][atom2-1]['element']}({atom2}")
+                                if atom1+1 in atoms and atom2+1 in atoms:
+                                    molecule_new['bonds'].append((new_atoms_map[atom1+1]-1, new_atoms_map[atom2+1]-1, order))
+                                    #print((new_atoms_map[atom1+1], new_atoms_map[atom2+1], order))
+                                    print(f"new {molecule_new['bonds']}")
+                                    print(f"new {molecule_new['atoms']}")
+                                    print(f"new {molecule_new['mapping']}")
+                                    print(f"old {molecule['bonds']}")
+                                    print(f"old {molecule['atoms']}")
+                                    print(f"old {molecule['mapping']}")
+                                    #new_bonds.append((new_atoms_map[atom1+1], new_atoms_map[atom2+1], order))
+
+                                elif atom1+1 in atoms and not atom2+1 in atoms:
+                                    neighbours[new_atoms_map[atom1+1]].append(atom2+1)
+
+                                    #neighbours.update({atom1+1: new_atoms_map[atom2+1]})
+                                elif atom2+1 in atoms and not atom1+1 in atoms:
+                                    neighbours[new_atoms_map[atom2+1]].append(atom1 + 1)
+                                    #neighbours.update({atom2+1: new_atoms_map[atom1+1]})
+
+                                # if atom1 in connection_map:  # and atom2 == second_connection:
+                                #
+                                #     #molecule_new['bonds'].append((first_connection, ,1))
+                                #     #new_bonds.append((first_connection, second_connection, 1))
+                                #     pass
+                            neighbours_inv = {x: k for k, v in neighbours.items() for x in v}
+                            connection_map_inv = {x: k for k, v in connection_map.items() for x in v}
+                            if neighbours_inv and connection_map_inv:
+                                molecule_new['bonds'].append((neighbours_inv[list(neighbours_inv)[0]]-1, connection_map_inv[list(neighbours_inv)[1]]-1, 1))
+                            connection_map = neighbours.copy()
+                        molecule['atoms'].extend(molecule_new['atoms'])
+                        molecule['bonds'].extend(molecule_new['bonds'])
+                        molecule['mapping'].extend(molecule_new['mapping'])
                     # todo add variable chains
-                    pass
             elif 'AttachmentPointArray' in x:
                 atoms = x['AttachmentPointArray']['attachmentPoint']
                 if isinstance(atoms, dict):
@@ -430,6 +497,9 @@ def parse_sgroup(data, molecule):
             sgroups[x['@id']] = tmp
         molecule['meta'] = sgroups
 
+
+def parse_markush(data, molecule):
+    pass
 
 class MRVWrite:
     """
