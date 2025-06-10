@@ -149,7 +149,9 @@ class MRVRead:
             datamol = data['molecule']
             mol = self.prepare_molecule(datamol, meta)
             substituents = []
-            if not data.get('Rgroup') and not any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
+            if not data.get('Rgroup') and \
+                    not any(x.get("@fieldName") == "X" for x in datamol['molecule']) and \
+                        not any(atom.atomic_symbol == "X" for n, atom in mol.atoms()):
                 return mol
             else:
                 if datagroup := data.get('Rgroup'):
@@ -165,10 +167,81 @@ class MRVRead:
                         for moldata in molecules:
                             sub = self.prepare_molecule(moldata, rgroup=r_idx)
                             substituents.append(sub)
-                #if any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
+                # check for atoms names
+                atoms = defaultdict(list)
+                print([x for x in mol.atoms()])
+                for n, atom in mol.atoms():
+                    if atom.atomic_symbol == 'X':
+                        atoms[atom.isotope if atom.isotope else 0].append( n)
+                # check for X chains
+                # x_atoms = defaultdict(list)
+                # for x_number, n in atoms['X']:
+                #     x_atoms[x_number].append(n)
+                # print(mol.int_adjacency)
+                # from itertools import product
+                edges = defaultdict(list)
+                atoms_del = []
+                print("at", atoms)
+                for x_num, atoms_num in atoms.items():
+                    # print(mol.connected_components)
+                    #print(atoms_num)
+                    # print("x", mol.connected_components)
+                    # print([len(set(atoms_num).intersection(x)) for x in mol.connected_components])
+                    # print("sum", sum([bool(set(atoms_num).intersection(x)) for x in mol.connected_components]))
+                    #print('ddd', sum([len(set(atoms_num).intersection(x)) > 1 for x in mol.connected_components]))
+                    if len(atoms_num) > 2:
+                            #and sum([len(set(atoms_num).intersection(x)) > 1 for x in mol.connected_components]) == 1:
+                            for i in mol.connected_components:
+                                # check if X atoms belong to the same molecule
+                                if sel_atoms := set(atoms_num).intersection(i):
 
+                                    if len(sel_atoms) > 2:
+                                        print("sel", sel_atoms)
+                                        print("i", i)
+                                        for n in sel_atoms:
+                                            # check if X atom connected to other than X atoms or to nothing
+                                            print("dif", set(mol.int_adjacency[n]).difference(atoms_num))
+                                            if not set(mol.int_adjacency[n]).difference(atoms_num):
+                                                atoms_del.append(n)
+                                            else:
+                                                edges[x_num].append(n)
+                print(edges)
+                print(atoms_del)
+
+                for i in atoms_del:
+                    print(mol.atom(i))
+                    print(mol.int_adjacency[i])
+                    # for bond in mol.int_adjacency[i]:
+                    #     try:
+                    #         mol.delete_bond(i, bond)
+                    #         mol.delete_bond(bond, i)
+                    #     except Exception:
+                    #         continue
+                    mol.delete_atom(i, _skip_calculation=True)
+                    mol.flush_cache()
+                    #mol._changed = None
+                    #mol._backup = None
+                print("a,b", [(a, b) for a, b in edges.items()])
+
+                for a, b in edges.values():
+                    if mol.has_bond(a, b) or mol.has_bond(b, a):
+                        continue
+                    else:
+                        mol.add_bond(a, b, 1)
+                        print(a, b, 1)
+                mol.flush_cache()
+
+                    # for x1, x2 in product([atoms_num], [atoms_num]):
+                    #     mol.has_bond(x1, x2)
+
+                #if 'X' in atoms:
+                #if any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
                     # check which molecule is Markush
+                print(mol)
+                mol.flush_cache()
+                print(mol)
                 mols = mol.split()
+                print(mols)
                 sort_mols = sorted(mols, key=lambda x: {atom.atomic_symbol for _, atom in mol.atoms()}.intersection({'X', 'R'}))
                 # we found Markush, so others are not
                 # todo add explicit check for only one Markush
@@ -398,6 +471,7 @@ def parse_sgroup(data, molecule):
         sgroups = {}
         atom_map = molecule['mapping']
         atom_map = {k: atom_map[v] for k, v in molecule['atom_map'].items()}
+        srusgroup_count = 0
         for x in data:
             if '@atomRefs' in x:
                 atoms = [atom_map[x] for x in x['@atomRefs'].split()]
@@ -418,7 +492,6 @@ def parse_sgroup(data, molecule):
                                                   'parsed_mapping': 0})
                                     molecule['mapping'].append(len(molecule['atoms']))
                                     molecule['bonds'].append((len(molecule['atoms'])-1, atom_map[x.get('@atomRefs')]-1, 1))
-
                 elif x.get('@role') == 'SruSgroup':
                     # extract group
                     seqs = []
@@ -455,12 +528,12 @@ def parse_sgroup(data, molecule):
                                 if atom1+1 in atoms and atom2+1 in atoms:
                                     molecule_new['bonds'].append((new_atoms_map[atom1+1]-1, new_atoms_map[atom2+1]-1, order))
                                     #print((new_atoms_map[atom1+1], new_atoms_map[atom2+1], order))
-                                    print(f"new {molecule_new['bonds']}")
-                                    print(f"new {molecule_new['atoms']}")
-                                    print(f"new {molecule_new['mapping']}")
-                                    print(f"old {molecule['bonds']}")
-                                    print(f"old {molecule['atoms']}")
-                                    print(f"old {molecule['mapping']}")
+                                    # print(f"new {molecule_new['bonds']}")
+                                    # print(f"new {molecule_new['atoms']}")
+                                    # print(f"new {molecule_new['mapping']}")
+                                    # print(f"old {molecule['bonds']}")
+                                    # print(f"old {molecule['atoms']}")
+                                    # print(f"old {molecule['mapping']}")
                                     #new_bonds.append((new_atoms_map[atom1+1], new_atoms_map[atom2+1], order))
 
                                 elif atom1+1 in atoms and not atom2+1 in atoms:
@@ -481,9 +554,46 @@ def parse_sgroup(data, molecule):
                             if neighbours_inv and connection_map_inv:
                                 molecule_new['bonds'].append((neighbours_inv[list(neighbours_inv)[0]]-1, connection_map_inv[list(neighbours_inv)[1]]-1, 1))
                             connection_map = neighbours.copy()
+                            if i == 0:
+                                first_connection = list(neighbours)[0]
+                                print(first_connection)
+                        second_connection = list(neighbours)[1]
+                        print(second_connection)
+
+                        molecule_new['atoms'].append({'element': 'X',
+                                                           'isotope': 99 - srusgroup_count,
+                                                           'charge': 0,
+                                                           'is_radical': False,
+                                                           'parsed_mapping': 0})
+
+                        num = len(molecule['atoms']) + len(molecule_new['atoms'])
+                        molecule_new['mapping'].append(num)
+
+                        molecule_new['bonds'].append(
+                            (num-1,  first_connection-1, 1))
+
+                        molecule_new['atoms'].append({'element': 'X',
+                                                      'isotope': 99 - srusgroup_count,
+                                                      'charge': 0,
+                                                      'is_radical': False,
+                                                      'parsed_mapping': 0})
+
+                        num = len(molecule['atoms']) + len(molecule_new['atoms'])
+                        molecule_new['mapping'].append(num)
+                        molecule_new['bonds'].append((num-1, second_connection-1, 1))
+
                         molecule['atoms'].extend(molecule_new['atoms'])
                         molecule['bonds'].extend(molecule_new['bonds'])
                         molecule['mapping'].extend(molecule_new['mapping'])
+                    for atom in atoms:
+                        molecule['atoms'][atom-1] = {'element': 'X',
+                                              'isotope': 99-srusgroup_count,
+                                              'charge': 0,
+                                              'is_radical': False,
+                                              'parsed_mapping': 0}
+                    srusgroup_count += 1
+                    print(neighbours_inv)
+                    print(connection_map_inv)
                     # todo add variable chains
             elif 'AttachmentPointArray' in x:
                 atoms = x['AttachmentPointArray']['attachmentPoint']

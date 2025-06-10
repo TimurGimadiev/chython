@@ -67,9 +67,11 @@ class MarkushContainer:
 
     @staticmethod
     def connect_no_bond(first: MoleculeContainer, other: MoleculeContainer, variables=var_atoms):
+        print(first, other)
         new = first.union(other, remap=True, copy=True)
         new._changed = None  # dirty fix
         new._backup = None  # dirty fix
+        print([str(i) for i in new.split()])
         first, other = new.split()  # instead of remap
         first_r_groups = MarkushContainer.r_groups_search(first)
         self_atoms = new.connected_components[: first.connected_components_count][0]
@@ -85,7 +87,6 @@ class MarkushContainer:
                         (x[0], new.bond(self_num, x[0]))
                         for x in new.int_adjacency[self_num].items()
                     ]
-
                     new.delete_atom(self_num)
                     new.delete_atom(other_num)
                     for atom, bond in self_bonds:
