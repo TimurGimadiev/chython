@@ -55,7 +55,6 @@ class MarkushContainer:
         first_r_groups = MarkushContainer.r_groups_search(first)
         substituent_r_groups = MarkushContainer.r_groups_search(new, exclude=self_atoms)
         for group, self_num in first_r_groups.items():
-            print(group, self_num)
             if group[0] in variables:
                 if other_num := substituent_r_groups.get(group):
                     for s_n, o_n in zip(self_num, other_num):
@@ -78,20 +77,10 @@ class MarkushContainer:
         first_r_groups = MarkushContainer.r_groups_search(first)
         self_atoms = new.connected_components[: first.connected_components_count][0]
         substituent_r_groups = MarkushContainer.r_groups_search(new, exclude=self_atoms)
-        # check if 2 groups in row
-        #if
         for group, self_num in first_r_groups.items():
-            # check if 2 groups in row
-            print(group, self_num)
-            # if len(group)==2:
-            #
-            #     pass
             if group[0] in variables:
                 if other_num := substituent_r_groups.get(group):
-                    print(group[0], other_num)
-                    # if isinstance(group, list):
-                    #     if isinstance(other_num,list):
-                #def combine():
+                    # check if 2 groups in row
                     for s_n, o_n in zip(self_num, other_num):
                         other_neigbours = [x for x in new.int_adjacency[o_n]]
                         if len(other_neigbours) != 1:

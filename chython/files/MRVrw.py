@@ -174,74 +174,32 @@ class MRVRead:
                     if atom.atomic_symbol == 'X':
                         atoms[atom.isotope if atom.isotope else 0].append( n)
                 # check for X chains
-                # x_atoms = defaultdict(list)
-                # for x_number, n in atoms['X']:
-                #     x_atoms[x_number].append(n)
-                # print(mol.int_adjacency)
-                # from itertools import product
                 edges = defaultdict(list)
                 atoms_del = []
-                print("at", atoms)
                 for x_num, atoms_num in atoms.items():
-                    # print(mol.connected_components)
-                    #print(atoms_num)
-                    # print("x", mol.connected_components)
-                    # print([len(set(atoms_num).intersection(x)) for x in mol.connected_components])
-                    # print("sum", sum([bool(set(atoms_num).intersection(x)) for x in mol.connected_components]))
-                    #print('ddd', sum([len(set(atoms_num).intersection(x)) > 1 for x in mol.connected_components]))
                     if len(atoms_num) > 2:
-                            #and sum([len(set(atoms_num).intersection(x)) > 1 for x in mol.connected_components]) == 1:
                             for i in mol.connected_components:
                                 # check if X atoms belong to the same molecule
                                 if sel_atoms := set(atoms_num).intersection(i):
-
                                     if len(sel_atoms) > 2:
-                                        print("sel", sel_atoms)
-                                        print("i", i)
                                         for n in sel_atoms:
                                             # check if X atom connected to other than X atoms or to nothing
-                                            print("dif", set(mol.int_adjacency[n]).difference(atoms_num))
                                             if not set(mol.int_adjacency[n]).difference(atoms_num):
                                                 atoms_del.append(n)
                                             else:
                                                 edges[x_num].append(n)
-                print(edges)
-                print(atoms_del)
-
+                # delete extra X atoms
                 for i in atoms_del:
-                    print(mol.atom(i))
-                    print(mol.int_adjacency[i])
-                    # for bond in mol.int_adjacency[i]:
-                    #     try:
-                    #         mol.delete_bond(i, bond)
-                    #         mol.delete_bond(bond, i)
-                    #     except Exception:
-                    #         continue
                     mol.delete_atom(i, _skip_calculation=True)
                     mol.flush_cache()
-                    #mol._changed = None
-                    #mol._backup = None
-                print("a,b", [(a, b) for a, b in edges.items()])
-
+                # delete extra bods
                 for a, b in edges.values():
                     if mol.has_bond(a, b) or mol.has_bond(b, a):
                         continue
                     else:
                         mol.add_bond(a, b, 1)
-                        print(a, b, 1)
                 mol.flush_cache()
-
-                    # for x1, x2 in product([atoms_num], [atoms_num]):
-                    #     mol.has_bond(x1, x2)
-
-                #if 'X' in atoms:
-                #if any([x.get("@fieldName") == "X" for x in datamol['molecule']]):
-                    # check which molecule is Markush
-                print(mol)
-                mol.flush_cache()
-                print(mol)
                 mols = mol.split()
-                print(mols)
                 sort_mols = sorted(mols, key=lambda x: {atom.atomic_symbol for _, atom in mol.atoms()}.intersection({'X', 'R'}))
                 # we found Markush, so others are not
                 # todo add explicit check for only one Markush
