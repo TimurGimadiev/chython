@@ -150,7 +150,7 @@ class MRVRead:
             mol = self.prepare_molecule(datamol, meta)
             substituents = []
             if not data.get('Rgroup') and \
-                    not any(x.get("@fieldName") == "X" for x in datamol['molecule']) and \
+                    (not any(x.get("@fieldName") == "X" for x in datamol.get('molecule')) if datamol.get('molecule') else False) and \
                         not any(atom.atomic_symbol == "X" for n, atom in mol.atoms()):
                 return mol
             else:

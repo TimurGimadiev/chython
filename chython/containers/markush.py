@@ -55,13 +55,15 @@ class MarkushContainer:
         first_r_groups = MarkushContainer.r_groups_search(first)
         substituent_r_groups = MarkushContainer.r_groups_search(new, exclude=self_atoms)
         for group, self_num in first_r_groups.items():
+            print(group, self_num)
             if group[0] in variables:
                 if other_num := substituent_r_groups.get(group):
-                    self_neigbour = [x for x in new.int_adjacency[self_num]][0]
-                    other_neigbour = [x for x in new.int_adjacency[other_num]][0]
-                    new.delete_atom(self_num, _skip_calculation=True)
-                    new.delete_atom(other_num, _skip_calculation=True)
-                    new.add_bond(self_neigbour, other_neigbour, 1)
+                    for s_n, o_n in zip(self_num, other_num):
+                        self_neigbour = [x for x in new.int_adjacency[s_n]][0]
+                        other_neigbour = [x for x in new.int_adjacency[o_n]][0]
+                        new.delete_atom(s_n, _skip_calculation=True)
+                        new.delete_atom(o_n, _skip_calculation=True)
+                        new.add_bond(self_neigbour, other_neigbour, 1)
                     return new
         return first
 
@@ -76,22 +78,40 @@ class MarkushContainer:
         first_r_groups = MarkushContainer.r_groups_search(first)
         self_atoms = new.connected_components[: first.connected_components_count][0]
         substituent_r_groups = MarkushContainer.r_groups_search(new, exclude=self_atoms)
+        # check if 2 groups in row
+        #if
         for group, self_num in first_r_groups.items():
+            # check if 2 groups in row
+            print(group, self_num)
+            # if len(group)==2:
+            #
+            #     pass
             if group[0] in variables:
                 if other_num := substituent_r_groups.get(group):
-                    other_neigbours = [x for x in new.int_adjacency[other_num]]
-                    if len(other_neigbours) != 1:
-                        raise ValueError("X groups should have exactly one neighbour")
-                    other_X_atom_num = other_neigbours[0]
-                    self_bonds = [
-                        (x[0], new.bond(self_num, x[0]))
-                        for x in new.int_adjacency[self_num].items()
-                    ]
-                    new.delete_atom(self_num)
-                    new.delete_atom(other_num)
-                    for atom, bond in self_bonds:
-                        new.add_bond(other_X_atom_num, atom, Bond(bond.order))
-                return new
+                    print(group[0], other_num)
+                    # if isinstance(group, list):
+                    #     if isinstance(other_num,list):
+                #def combine():
+                    for s_n, o_n in zip(self_num, other_num):
+                        other_neigbours = [x for x in new.int_adjacency[o_n]]
+                        if len(other_neigbours) != 1:
+                            raise ValueError("X groups should have exactly one neighbour")
+                        other_X_atom_num = other_neigbours[0]
+                        self_bonds = [
+                            (x[0], new.bond(s_n, x[0]))
+                            for x in new.int_adjacency[s_n].items()
+                        ]
+                        new.delete_atom(s_n)
+                        new.delete_atom(o_n)
+                        for atom, bond in self_bonds:
+                            new.add_bond(other_X_atom_num, atom, Bond(bond.order))
+                    if group == 'X' and len(self_num) == 2:
+                        new.delete_bond(self_num[0], self_num[1])
+                        new.flush_cache()
+                    return new
+
+
+
         return first
 
     @property
@@ -111,13 +131,13 @@ class MarkushContainer:
         return obj
 
     @staticmethod
-    def r_groups_search(molecule, exclude: Iterable[int] = []):
-        r_groups = {}
+    def r_groups_search(molecule, exclude: Iterable[int] = []) -> defaultdict[str, int]:
+        r_groups = defaultdict(list)
         for num, atom in molecule.atoms():
             if atom.atomic_symbol in var_atoms + var_groups and num not in exclude:
                 isotope = 0 if atom.isotope is None else atom.isotope
                 if 0 <= isotope <= 99:
-                    r_groups[(atom.atomic_symbol, isotope)] = num
+                    r_groups[(atom.atomic_symbol, isotope)].append(num)
         return r_groups
 
     @property
